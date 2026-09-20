@@ -1,0 +1,29 @@
+services:
+  mongo:
+    image: mongo:7.0.14
+    restart: unless-stopped
+    volumes:
+      - submind_mongo:/data/db
+    networks:
+      - submind_private
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: submind
+    depends_on:
+      - mongo
+    ports:
+      - "8000:8000"
+    networks:
+      - submind_private
+
+networks:
+  submind_private:
+
+volumes:
+  submind_mongo:
