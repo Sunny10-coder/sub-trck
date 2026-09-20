@@ -63,12 +63,12 @@ export default function LinkVault() {
 
 const useStyles = makeStyles((colors) => ({
   container: { flex: 1, backgroundColor: colors.surface },
-  searchWrap: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginBottom: 12, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
-  search: { flex: 1, color: colors.onSurface, fontSize: 15 },
+  searchWrap: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginBottom: 12, backgroundColor: colors.surfaceSecondary, borderWidth: 2, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, shadowColor: "#000", shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 3, height: 4 }, elevation: 4 },
+  search: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: "600" },
   folderWrap: { flex: 1 },
-  folderTab: { width: "45%", height: 14, borderTopLeftRadius: 12, borderTopRightRadius: 12, marginLeft: 8, marginBottom: -6 },
-  folder: { borderRadius: 20, padding: 16, gap: 10, minHeight: 130, justifyContent: "space-between" },
+  folderTab: { width: "45%", height: 16, borderTopLeftRadius: 10, borderTopRightRadius: 10, marginLeft: 10, marginBottom: -8, borderWidth: 2, borderBottomWidth: 0, borderColor: colors.border },
+  folder: { borderRadius: 18, padding: 16, gap: 10, minHeight: 132, justifyContent: "space-between", borderWidth: 2, borderColor: colors.border, shadowColor: "#000", shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 3, height: 5 }, elevation: 5 },
   folderTitle: { color: colors.onAccent, fontSize: 15, fontWeight: "800", lineHeight: 20 },
   folderMeta: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  folderSource: { color: colors.onAccent, opacity: 0.75, fontSize: 12, fontWeight: "700" },
+  folderSource: { color: colors.onAccent, opacity: 0.8, fontSize: 12, fontWeight: "800" },
 }));
