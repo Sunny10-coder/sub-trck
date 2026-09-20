@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+.metro-cache/
+dist/
+dist-validation/
+web-build/
+expo-env.d.ts
+
+# Native/signing
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro and debug
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# System/build
+.DS_Store
+*.pem
+*.tsbuildinfo
+app-example
