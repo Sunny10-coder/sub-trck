@@ -41,7 +41,24 @@ export function relativeDate(d?: string | null): string {
   return `In ${Math.round(n / 30)} months`;
 }
 
-export const CATEGORIES = ["AI", "Streaming", "Music", "Productivity", "Cloud", "Gaming", "News", "Fitness", "Shopping", "Other"];
+export function formatTime(t?: string | null): string {
+  if (!t || !/^\d{2}:\d{2}$/.test(t)) return "";
+  const [h, m] = t.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+export function daysLeftLabel(d?: string | null): string {
+  const n = daysUntil(d);
+  if (n === null) return "—";
+  if (n < 0) return `${Math.abs(n)}d overdue`;
+  if (n === 0) return "Today";
+  if (n === 1) return "1 day left";
+  return `${n} days left`;
+}
+
+export const CATEGORIES = ["Video", "Streaming", "AI", "Music", "Productivity", "Cloud", "Gaming", "News", "Fitness", "Shopping", "Other"];
 export const CURRENCIES = ["AED", "USD", "EUR", "GBP", "INR", "SAR"];
 export const CYCLES = ["monthly", "yearly", "weekly", "custom"];
 export const STATUSES = ["Active", "Trial", "Paused", "Cancelled", "Expired", "Unknown"];

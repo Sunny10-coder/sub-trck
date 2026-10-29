@@ -131,6 +131,75 @@ def test_duplicate_detection(s):
         s.delete(f"{API}/subscriptions/{sid}")
 
 
+# ---------- Accounts Opened CRUD ----------
+def test_accounts_crud(s):
+    payload = {
+        "service_name": "TEST_ChatGPT",
+        "service_url": "https://chatgpt.com",
+        "email_used": "alex@example.com",
+        "username": "alex_dev",
+        "auth_method": "google",
+        "account_type": "free",
+        "two_factor_enabled": True,
+        "notes": "Testing account registry",
+    }
+    r = s.post(f"{API}/accounts", json=payload)
+    assert r.status_code == 200, r.text
+    acc = r.json()
+    aid = acc["id"]
+    assert acc["service_name"] == "TEST_ChatGPT"
+    assert acc["email_used"] == "alex@example.com"
+    assert acc["two_factor_enabled"] is True
+
+    # GET account by ID
+    r = s.get(f"{API}/accounts/{aid}")
+    assert r.status_code == 200
+    assert r.json()["id"] == aid
+
+    # List accounts
+    r = s.get(f"{API}/accounts")
+    assert r.status_code == 200
+    assert any(x["id"] == aid for x in r.json())
+
+    # PATCH account
+    r = s.patch(f"{API}/accounts/{aid}", json={"account_type": "paid", "notes": "Upgraded to Plus"})
+    assert r.status_code == 200
+    assert r.json()["account_type"] == "paid"
+    assert r.json()["notes"] == "Upgraded to Plus"
+
+    # Create a subscription and link to account
+    sub_payload = {
+        "provider": "TEST_OpenAI",
+        "product": "ChatGPT Plus",
+        "price": 20.0,
+        "currency": "USD",
+        "billing_cycle": "monthly",
+    }
+    r = s.post(f"{API}/subscriptions", json=sub_payload)
+    assert r.status_code == 200
+    sub = r.json()
+    sid = sub["id"]
+
+    try:
+        # Link subscription to account
+        r = s.post(f"{API}/accounts/{aid}/link-subscription/{sid}")
+        assert r.status_code == 200
+        assert r.json().get("linked") is True
+
+        # Query account subscriptions
+        r = s.get(f"{API}/accounts/{aid}/subscriptions")
+        assert r.status_code == 200
+        subs = r.json()
+        assert any(x["id"] == sid for x in subs)
+    finally:
+        s.delete(f"{API}/subscriptions/{sid}")
+        s.delete(f"{API}/accounts/{aid}")
+
+    # Confirm soft deletion
+    r = s.get(f"{API}/accounts/{aid}")
+    assert r.status_code == 404
+
+
 # ---------- Links ----------
 def test_links_crud(s):
     r = s.post(f"{API}/links", json={"url": "https://example.com/test-link", "source": "manual", "text": "TEST"}, timeout=60)

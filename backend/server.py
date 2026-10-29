@@ -100,6 +100,23 @@ async def _find_duplicate(extraction: dict) -> Optional[dict]:
     return None
 
 
+async def _find_account_duplicate(extraction: dict) -> Optional[dict]:
+    service = (extraction.get("service_name") or extraction.get("provider") or extraction.get("product") or "").strip().lower()
+    email = (extraction.get("email_used") or extraction.get("account_email") or "").strip().lower()
+    if not service:
+        return None
+    accs = await db.accounts.find(await base_query()).to_list(500)
+    for acc in accs:
+        acc_srv = (acc.get("service_name") or "").strip().lower()
+        acc_email = (acc.get("email_used") or "").strip().lower()
+        if email and acc_email:
+            if acc_srv == service and acc_email == email:
+                return clean(acc)
+        elif acc_srv == service:
+            return clean(acc)
+    return None
+
+
 def _reminder_from(extraction: dict, ref_type: str, ref_id: str) -> Optional[dict]:
     date = extraction.get("trial_end") or extraction.get("renewal_date") or extraction.get("offer_expiry")
     if not date:
@@ -132,15 +149,22 @@ async def run_pipeline(extraction: dict, source: str, raw_text: str = "",
     else:
         status = "needs_review"
 
-    # Duplicate check for subscription-like items
+    # Duplicate check for subscription-like items or accounts
     if ctype in ("subscription", "trial", "payment"):
         duplicate = await _find_duplicate(extraction)
+        if duplicate:
+            status = "duplicate"
+    elif ctype == "account":
+        duplicate = await _find_account_duplicate(extraction)
         if duplicate:
             status = "duplicate"
 
     # Auto-create record when confident enough and not a duplicate
     if status == "auto_added" and not duplicate:
-        if ctype in ("subscription", "trial"):
+        if ctype == "account":
+            created_ref = await _create_account_from(extraction, source, url)
+            created_type = "account"
+        elif ctype in ("subscription", "trial"):
             created_ref = await _create_subscription_from(extraction, source, url, image_kept)
             created_type = "subscription"
         elif ctype == "link" or url:
@@ -161,6 +185,31 @@ async def run_pipeline(extraction: dict, source: str, raw_text: str = "",
     }
     await db.smart_inbox.insert_one(dict(inbox))
     return clean(inbox)
+
+
+async def _create_account_from(ex: dict, source: str, url: str) -> str:
+    aid = str(uuid.uuid4())
+    stamp = now_iso()
+    srv_name = ex.get("service_name") or ex.get("provider") or ex.get("product") or "Unknown"
+    srv_url = url or ex.get("service_url") or ""
+    acc_type = ex.get("account_type") or ("paid" if ex.get("price") else "free")
+    doc = {
+        "id": aid, "user_id": USER_ID, "deleted_at": None,
+        "service_name": srv_name, "service_url": srv_url,
+        "category": ex.get("category", "Other"),
+        "email_used": ex.get("email_used") or ex.get("account_email") or "",
+        "username": ex.get("username") or "", "phone_used": ex.get("phone_used") or "",
+        "auth_method": ex.get("auth_method") or "email",
+        "has_2fa": bool(ex.get("has_2fa")), "account_type": acc_type,
+        "registration_date": ex.get("registration_date") or stamp[:10],
+        "last_login": None, "linked_subscription_ids": [],
+        "source_link_id": ex.get("source_link_id"),
+        "notes": ex.get("notes") or ex.get("summary") or "",
+        "tags": ex.get("tags") or [], "logo_url": ex.get("logo_url") or ex.get("thumbnail"),
+        "source": source, "created_at": stamp, "updated_at": stamp,
+    }
+    await db.accounts.insert_one(dict(doc))
+    return aid
 
 
 async def _create_subscription_from(ex: dict, source: str, url: str, image: Optional[str]) -> str:
@@ -495,6 +544,104 @@ async def delete_subscription(sid: str):
 
 
 # ---------------------------------------------------------------------------
+# Accounts Opened CRUD
+# ---------------------------------------------------------------------------
+@api.get("/accounts")
+async def list_accounts(category: Optional[str] = None):
+    extra = {}
+    if category and category != "All":
+        extra["category"] = category
+    accs = await db.accounts.find(await base_query(extra)).sort("created_at", -1).to_list(500)
+    return [clean(a) for a in accs]
+
+
+@api.get("/accounts/{aid}")
+async def get_account(aid: str):
+    doc = await db.accounts.find_one({"id": aid, "user_id": USER_ID, "deleted_at": None})
+    if not doc:
+        raise HTTPException(404, "Account not found")
+    return clean(doc)
+
+
+@api.post("/accounts")
+async def create_account(body: Dict[str, Any]):
+    aid = str(uuid.uuid4())
+    stamp = now_iso()
+    doc = {
+        "id": aid,
+        "user_id": USER_ID,
+        "deleted_at": None,
+        "service_name": body.get("service_name") or body.get("provider") or "Unknown",
+        "service_url": body.get("service_url") or body.get("url") or "",
+        "category": body.get("category", "Other"),
+        "email_used": body.get("email_used") or body.get("account_email") or "",
+        "username": body.get("username") or "",
+        "phone_used": body.get("phone_used") or "",
+        "auth_method": body.get("auth_method") or "email",
+        "has_2fa": bool(body.get("has_2fa")),
+        "account_type": body.get("account_type") or "free",
+        "registration_date": body.get("registration_date") or stamp[:10],
+        "last_login": body.get("last_login"),
+        "linked_subscription_ids": body.get("linked_subscription_ids") or [],
+        "source_link_id": body.get("source_link_id"),
+        "notes": body.get("notes") or "",
+        "tags": body.get("tags") or [],
+        "logo_url": body.get("logo_url"),
+        "source": body.get("source", "manual"),
+        "created_at": stamp,
+        "updated_at": stamp,
+    }
+    await db.accounts.insert_one(dict(doc))
+    return clean(doc)
+
+
+@api.patch("/accounts/{aid}")
+async def update_account(aid: str, body: Dict[str, Any]):
+    doc = await db.accounts.find_one({"id": aid, "user_id": USER_ID})
+    if not doc:
+        raise HTTPException(404, "Account not found")
+    body.pop("id", None); body.pop("_id", None); body.pop("user_id", None)
+    body["updated_at"] = now_iso()
+    await db.accounts.update_one({"id": aid}, {"$set": body})
+    updated = await db.accounts.find_one({"id": aid})
+    return clean(updated)
+
+
+@api.delete("/accounts/{aid}")
+async def delete_account(aid: str):
+    await db.accounts.update_one({"id": aid, "user_id": USER_ID}, {"$set": {"deleted_at": now_iso()}})
+    return {"ok": True}
+
+
+@api.post("/accounts/{aid}/link-subscription/{sid}")
+async def link_subscription_to_account(aid: str, sid: str):
+    acc = await db.accounts.find_one({"id": aid, "user_id": USER_ID, "deleted_at": None})
+    if not acc:
+        raise HTTPException(404, "Account not found")
+    sub = await db.subscriptions.find_one({"id": sid, "user_id": USER_ID, "deleted_at": None})
+    if not sub:
+        raise HTTPException(404, "Subscription not found")
+
+    linked = list(acc.get("linked_subscription_ids") or [])
+    if sid not in linked:
+        linked.append(sid)
+        await db.accounts.update_one({"id": aid}, {"$set": {"linked_subscription_ids": linked, "account_type": "paid", "updated_at": now_iso()}})
+    await db.subscriptions.update_one({"id": sid}, {"$set": {"account_id": aid, "updated_at": now_iso()}})
+    return {"ok": True, "account_id": aid, "subscription_id": sid}
+
+
+@api.get("/accounts/{aid}/subscriptions")
+async def get_account_subscriptions(aid: str):
+    acc = await db.accounts.find_one({"id": aid, "user_id": USER_ID, "deleted_at": None})
+    if not acc:
+        raise HTTPException(404, "Account not found")
+    linked_ids = set(acc.get("linked_subscription_ids") or [])
+    subs = await db.subscriptions.find(await base_query()).to_list(500)
+    matched = [clean(s) for s in subs if s.get("account_id") == aid or s.get("id") in linked_ids]
+    return matched
+
+
+# ---------------------------------------------------------------------------
 # Links (Link Vault)
 # ---------------------------------------------------------------------------
 @api.get("/links")
@@ -631,6 +778,63 @@ async def delete_reminder(rid: str):
 
 
 # ---------------------------------------------------------------------------
+# Prompts CRUD
+# ---------------------------------------------------------------------------
+@api.get("/prompts")
+async def list_prompts(category: Optional[str] = None):
+    extra = {}
+    if category and category != "All":
+        extra["category"] = category
+    prompts = await db.prompts.find(await base_query(extra)).sort("created_at", -1).to_list(500)
+    return [clean(p) for p in prompts]
+
+
+@api.get("/prompts/{pid}")
+async def get_prompt(pid: str):
+    doc = await db.prompts.find_one({"id": pid, "user_id": USER_ID, "deleted_at": None})
+    if not doc:
+        raise HTTPException(404, "Prompt not found")
+    return clean(doc)
+
+
+@api.post("/prompts")
+async def create_prompt(body: Dict[str, Any]):
+    pid = str(uuid.uuid4())
+    stamp = now_iso()
+    doc = {
+        "id": pid,
+        "user_id": USER_ID,
+        "deleted_at": None,
+        "title": body.get("title") or "AI Prompt",
+        "prompt": body.get("prompt") or "",
+        "category": body.get("category") or "Custom",
+        "link_url": body.get("link_url"),
+        "photo_url": body.get("photo_url"),
+        "tags": body.get("tags") or [],
+        "icon": body.get("icon") or "creation",
+        "created_at": stamp,
+        "updated_at": stamp,
+    }
+    await db.prompts.insert_one(dict(doc))
+    return clean(doc)
+
+
+@api.patch("/prompts/{pid}")
+async def update_prompt(pid: str, body: Dict[str, Any]):
+    body.pop("id", None); body.pop("_id", None)
+    body["updated_at"] = now_iso()
+    await db.prompts.update_one({"id": pid, "user_id": USER_ID}, {"$set": body})
+    doc = await db.prompts.find_one({"id": pid})
+    return clean(doc)
+
+
+@api.delete("/prompts/{pid}")
+async def delete_prompt(pid: str):
+    await db.prompts.update_one({"id": pid, "user_id": USER_ID}, {"$set": {"deleted_at": now_iso()}})
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Insights
 # ---------------------------------------------------------------------------
 def _monthly_cost(sub: dict) -> float:
@@ -695,10 +899,14 @@ async def insights():
                 break
 
     watch = await db.plan_watchlist.find(await base_query()).to_list(200)
+    accs = await db.accounts.find(await base_query()).to_list(500)
+    paid_accs = [a for a in accs if a.get("account_type") == "paid" or (a.get("linked_subscription_ids") and len(a["linked_subscription_ids"]) > 0)]
     return {
         "currency": settings["currency"],
         "monthly_spend": monthly, "yearly_spend": yearly,
         "active_count": len(active), "total_count": len(subs),
+        "accounts_count": len(accs), "paid_accounts_count": len(paid_accs),
+        "free_accounts_count": len(accs) - len(paid_accs),
         "renewals_30d": renewals, "trials_ending": trials,
         "category_breakdown": [{"category": k, "amount": round(v, 2)} for k, v in
                                sorted(cats.items(), key=lambda x: -x[1])],
@@ -714,7 +922,7 @@ async def insights():
 async def search(q: str = ""):
     q = q.strip()
     if not q:
-        return {"subscriptions": [], "links": [], "plans": [], "reminders": []}
+        return {"subscriptions": [], "accounts": [], "links": [], "plans": [], "reminders": []}
     rx = {"$regex": re.escape(q), "$options": "i"}
     base = await base_query()
 
@@ -726,6 +934,7 @@ async def search(q: str = ""):
 
     return {
         "subscriptions": await find(db.subscriptions, ["provider", "product", "plan", "category", "notes"]),
+        "accounts": await find(db.accounts, ["service_name", "email_used", "username", "category", "notes", "service_url"]),
         "links": await find(db.saved_links, ["title", "summary", "url", "category", "note"]),
         "plans": await find(db.plan_watchlist, ["provider", "plan", "notes"]),
         "reminders": await find(db.reminders, ["title"]),
@@ -738,6 +947,7 @@ async def search(q: str = ""):
 @api.get("/graph")
 async def graph():
     base = await base_query()
+    accs = [clean(a) for a in await db.accounts.find(base).to_list(300)]
     subs = [clean(s) for s in await db.subscriptions.find(base).to_list(300)]
     links = [clean(l) for l in await db.saved_links.find(base).to_list(300)]
     plans = [clean(p) for p in await db.plan_watchlist.find(base).to_list(300)]
@@ -763,12 +973,23 @@ async def graph():
             nodes.append({"id": cid, "label": c, "type": "category"})
         return cat_nodes[key]
 
+    for a in accs:
+        nid = f"acc:{a['id']}"
+        nodes.append({"id": nid, "label": a.get("service_name", "Account"), "type": "account",
+                      "meta": {"email": a.get("email_used"), "auth_method": a.get("auth_method")}})
+        if a.get("category"):
+            edges.append({"source": nid, "target": cat_id(a["category"])})
+        for t in a.get("tags", []):
+            edges.append({"source": nid, "target": tag_id(t)})
+
     for s in subs:
         nid = f"sub:{s['id']}"
         nodes.append({"id": nid, "label": s.get("provider", "Sub"), "type": "subscription",
                       "meta": {"price": s.get("price"), "currency": s.get("currency"), "status": s.get("status")}})
         if s.get("category"):
             edges.append({"source": nid, "target": cat_id(s["category"])})
+        if s.get("account_id"):
+            edges.append({"source": nid, "target": f"acc:{s['account_id']}"})
         for t in s.get("tags", []):
             edges.append({"source": nid, "target": tag_id(t)})
     for l in links:
@@ -777,6 +998,8 @@ async def graph():
                       "meta": {"source": l.get("source")}})
         if l.get("category"):
             edges.append({"source": nid, "target": cat_id(l["category"])})
+        if l.get("converted_to_account_id"):
+            edges.append({"source": nid, "target": f"acc:{l['converted_to_account_id']}"})
         for t in l.get("tags", []):
             edges.append({"source": nid, "target": tag_id(t)})
     for p in plans:
@@ -792,15 +1015,19 @@ async def graph():
 # ---------------------------------------------------------------------------
 async def _build_context() -> str:
     base = await base_query()
+    accs = [clean(a) for a in await db.accounts.find(base).to_list(300)]
     subs = [clean(s) for s in await db.subscriptions.find(base).to_list(300)]
     links = [clean(l) for l in await db.saved_links.find(base).to_list(300)]
     plans = [clean(p) for p in await db.plan_watchlist.find(base).to_list(200)]
     rems = [clean(r) for r in await db.reminders.find(base).to_list(200)]
     ins = await insights()
 
+    def slim_acc(a):
+        return {k: a.get(k) for k in ("service_name", "service_url", "email_used", "username", "auth_method", "account_type", "category", "tags")}
+
     def slim_sub(s):
         return {k: s.get(k) for k in ("provider", "product", "plan", "category", "status",
-                                      "price", "currency", "billing_cycle", "renewal_date", "trial_end", "tags")}
+                                      "price", "currency", "billing_cycle", "renewal_date", "trial_end", "account_id", "tags")}
 
     def slim_link(l):
         return {k: l.get(k) for k in ("title", "url", "source", "category", "summary", "tags")}
@@ -813,6 +1040,7 @@ async def _build_context() -> str:
 
     ctx = {
         "spend": {"monthly": ins["monthly_spend"], "yearly": ins["yearly_spend"], "currency": ins["currency"]},
+        "accounts_opened": [slim_acc(a) for a in accs],
         "subscriptions": [slim_sub(s) for s in subs],
         "saved_links": [slim_link(l) for l in links],
         "plan_watchlist": [slim_plan(p) for p in plans],

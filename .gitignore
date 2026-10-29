@@ -77,3 +77,24 @@ android-sdk/
 *.pack
 *.deb
 *.dylib
+*.apk
+**/*.apk
+.preview-edge*/
+frontend/.preview-edge*/
+
+# Local-only personal data, generated outputs and machine helpers
+output/
+*.log
+.claude/
+skill-observations/
+REDESIGN-NOTES.md
+*.keystore
+frontend/src/data/personal-workbook.json
+frontend/src/data/pasted-audit.json
+frontend/src/data/personal-import-report.json
+frontend/scripts/import-personal-workbook.py
+frontend/scripts/repair-*.py
+frontend/scripts/restore-cached-dependencies.py
+frontend/scripts/restyle.py
+frontend/check-core.js
+frontend/update-autolink.js

@@ -1,25 +1,37 @@
 # SubMind
 
-SubMind is an Expo phone app backed by your own FastAPI + MongoDB service. It tracks subscriptions, links, reminders, and uses your Gemini/OpenAI keys for optional AI features. No hosted gateway is required.
+SubMind is a local-first Expo app for subscriptions, accounts, saved links, prompts and reminders. The paper-style interface uses cream surfaces, bold outlines and colourful cards. Optional AI features use provider keys configured in Profile.
 
 ## Architecture
 
 ```text
-Expo app (Android/iPhone)
-  -> your FastAPI backend (/api)
-      -> your MongoDB
-      -> Gemini API (extraction/chat/compare)
-      -> OpenAI API (voice transcription)
+Expo app (Android/iPhone/web)
+  -> on-device storage (subscriptions, accounts, links, prompts)
+  -> optional AI providers (extraction, summaries, chat and transcription)
+
+Optional legacy service: FastAPI + MongoDB in backend/
 ```
 
-The app has a **Profile** screen where you can set:
-- your display name;
-- your backend URL;
-- the single-owner backend access token;
-- your Gemini API key;
-- your OpenAI API key.
+The **Profile** screen manages your display name and Gemini, NVIDIA and OpenAI keys, plus Excel export and JSON backup/restore.
 
-On Android/iOS, tokens and provider keys are stored with Expo SecureStore. On web they are session-only. Keys are sent to the backend only for routes that need them and are not stored in MongoDB. You can instead keep provider keys entirely on the server in `backend/.env`.
+On Android/iOS, provider keys use secure storage. On web they are session-only. The mobile app does not require the legacy backend below.
+
+## Run the app
+
+```powershell
+cd frontend
+npm install
+npm run web
+# Checks (Node.js 24+ for the core test loader):
+npm run typecheck
+npm run test:core
+```
+
+Private workbook data and local API-key seeds are excluded from this public repository. Installation creates empty defaults without replacing existing local files. See [private-data setup](frontend/src/data/README.md). The local signed APK and backups remain on the owner's computer; they are not public release assets.
+
+For Android, install a JDK and Android SDK, then use `npm run android` or `android/gradlew assembleRelease`. The optional debug signing key is generated locally during installation; use your own signing configuration for store distribution.
+
+The backend instructions below apply only to the optional legacy service.
 
 ## 1. Start your backend on Windows
 

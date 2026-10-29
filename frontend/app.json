@@ -2,7 +2,7 @@
   "expo": {
     "name": "SubMind",
     "slug": "submind",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "submind",
@@ -19,10 +19,22 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#F7F4ED"
       },
       "package": "com.sabit.submind",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_MEDIA_IMAGES"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ],
+      "versionCode": 2
     },
     "web": {
       "bundler": "metro",
@@ -37,7 +49,7 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#141319"
+          "backgroundColor": "#F7F4ED"
         }
       ],
       "expo-font",
@@ -47,16 +59,58 @@
       "expo-status-bar",
       "expo-audio",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#753BFF",
+          "defaultChannel": "reminders"
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Import subscription screenshots to extract details",
           "cameraPermission": "Scan subscription screenshots and receipts"
         }
       ],
-      "@react-native-vector-icons/material-design-icons"
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "text/*"
+          ]
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Upcoming",
+              "label": "SubMind — Upcoming",
+              "description": "See your next renewals and reminders",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 3,
+              "targetCellHeight": 2,
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
+            }
+          ]
+        }
+      ],
+      "@react-native-vector-icons/material-design-icons",
+      "@react-native-community/datetimepicker",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3c0f68f1-41f0-4a63-b68f-1cf098beb48d"
+      }
     }
   }
 }

@@ -80,7 +80,7 @@ function ErrorFallback({ error, resetError }: { error: Error; resetError: () => 
 const useStyles = makeStyles((colors) => ({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceSolid,
     justifyContent: "center",
     padding: 24,
   },
@@ -131,7 +131,7 @@ const useStyles = makeStyles((colors) => ({
     marginTop: 16,
     maxHeight: 260,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
   },

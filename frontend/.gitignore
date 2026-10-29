@@ -28,9 +28,15 @@ yarn-error.*
 .env
 .env.*
 !.env.example
+src/lib/device-ai-seed.ts
 
 # System/build
 .DS_Store
 *.pem
 *.tsbuildinfo
 app-example
+
+# Local UI preview output
+.preview-edge*/
+home-preview*.png
+vault-preview*.png

@@ -30,9 +30,14 @@ OPENAI_API_URL = os.environ.get("OPENAI_API_URL", "https://api.openai.com/v1").r
 
 EXTRACTION_SCHEMA_HINT = """Return ONLY a strict JSON object (no markdown, no prose) with keys:
 {
-  "content_type": one of ["subscription","trial","plan","link","reminder","payment","note","unknown"],
+  "content_type": one of ["subscription","account","trial","plan","link","check_later","reminder","payment","note","unknown"],
   "provider": string,
   "product": string,
+  "service_name": string (for accounts or registered websites),
+  "service_url": string or null,
+  "email_used": string or null,
+  "username": string or null,
+  "auth_method": one of ["email","google","apple","github","phone","other"] or null,
   "plan": string,
   "price": number or null,
   "currency": string (ISO like "AED","USD"; default "AED" if unknown),
@@ -107,6 +112,11 @@ def _normalize_extraction(data: Dict[str, Any], source_type: str) -> Dict[str, A
         "content_type": string(data.get("content_type") or "unknown").lower(),
         "provider": string(data.get("provider")),
         "product": string(data.get("product")),
+        "service_name": string(data.get("service_name") or data.get("provider") or data.get("product")),
+        "service_url": string(data.get("service_url")),
+        "email_used": string(data.get("email_used")),
+        "username": string(data.get("username")),
+        "auth_method": string(data.get("auth_method")),
         "plan": string(data.get("plan")),
         "price": data.get("price") if isinstance(data.get("price"), (int, float)) else None,
         "currency": (string(data.get("currency")) or "AED").upper(),

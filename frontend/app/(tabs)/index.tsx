@@ -1,212 +1,28 @@
 import { useRouter } from "expo-router";
 import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 import { TAB_BAR_SPACE } from "./_layout";
-import { useInsights, useLinks, useSubscriptions, useWatchlist } from "@/src/lib/api";
-import { money, relativeDate } from "@/src/lib/format";
-import { Card, Icon, Loading } from "@/src/components/ui";
-import { accentFor, makeStyles, useTheme } from "@/src/theme";
-
-function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-}
-
-const QUICK = [
-  { icon: "camera", label: "Scan", href: "/scan?mode=camera", key: "accentRed" },
-  { icon: "link-variant", label: "Paste", href: "/paste-link", key: "accentBlue" },
-  { icon: "chat-processing", label: "Ask AI", href: "/(tabs)/ai", key: "accentPurple" },
-  { icon: "wallet-plus", label: "Add", href: "/add-subscription", key: "accentGreen" },
-];
-
-const SHORTCUTS = [
-  { icon: "account-cog", label: "Profile", href: "/profile" },
-  { icon: "bookmark-multiple", label: "Link Vault", href: "/link-vault" },
-  { icon: "eye-check", label: "Watchlist", href: "/watchlist" },
-  { icon: "bell", label: "Reminders", href: "/reminders" },
-  { icon: "chart-donut", label: "Insights", href: "/insights" },
-  { icon: "graph", label: "Brain Map", href: "/graph" },
-];
-
+import { Badge, BrandMark, CategoryDot, Icon, SectionTitle } from "@/src/components/ui";
+import { useAccounts, useInsights, useSubscriptions, useWatchlist } from "@/src/lib/api";
+import { daysUntil, formatDate, money } from "@/src/lib/format";
+import { makeStyles, useTheme } from "@/src/theme";
 export default function Home() {
-  const styles = useStyles();
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const ins = useInsights();
-  const links = useLinks();
-  const watch = useWatchlist();
-  const subs = useSubscriptions();
-
-  const data = ins.data;
-  const cur = data?.currency || "AED";
-  const today = new Date();
-  const dateStr = today.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const weekday = today.toLocaleDateString(undefined, { weekday: "long" });
-
-  const refreshing = ins.isFetching || links.isFetching || watch.isFetching;
-  const refetchAll = () => { ins.refetch(); links.refetch(); watch.refetch(); subs.refetch(); };
-
-  const renews = data?.renewals_30d?.length ?? 0;
-  const trials = data?.trials_ending?.length ?? 0;
-
-  return (
-    <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: TAB_BAR_SPACE + insets.bottom }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refetchAll} tintColor={colors.brandPrimary} />}
-      >
-        <View style={styles.topRow}>
-          <Text style={styles.hi}>{greeting()}</Text>
-          <View style={styles.dateBox}>
-            <View style={styles.dateDot} />
-            <Text style={styles.dateText}>{dateStr}  ·  {weekday}</Text>
-          </View>
-        </View>
-        <Text style={styles.brand}>SubMind</Text>
-
-        {ins.isLoading ? (
-          <Loading />
-        ) : (
-          <>
-            {/* Expressive dark hero card */}
-            <View style={styles.hero}>
-              <Text style={styles.heroLead}>Here is your money memory today.</Text>
-              <Text style={styles.heroBig}>
-                You are spending{" "}
-                <Text style={[styles.hl, { color: colors.accentYellow }]}>{money(data?.monthly_spend, cur)}</Text>
-                <Text style={styles.heroBig}> a month across </Text>
-                <Text style={[styles.hl, { color: colors.accentGreen }]}>{data?.active_count ?? 0} subs</Text>
-                <Text style={styles.heroBig}>. </Text>
-                <Text style={[styles.hl, { color: colors.accentOrange }]}>{renews}</Text>
-                <Text style={styles.heroBig}> renew soon and </Text>
-                <Text style={[styles.hl, { color: colors.accentPink }]}>{trials} trials</Text>
-                <Text style={styles.heroBig}> are ending.</Text>
-              </Text>
-              <View style={styles.heroChips}>
-                <View style={styles.heroChip}><Text style={styles.heroChipLabel}>Yearly</Text><Text style={styles.heroChipValue}>{money(data?.yearly_spend, cur)}</Text></View>
-                <View style={styles.heroChip}><Text style={styles.heroChipLabel}>Renews 30d</Text><Text style={styles.heroChipValue}>{renews}</Text></View>
-              </View>
-            </View>
-
-            {/* Quick actions */}
-            <View style={styles.quickRow}>
-              {QUICK.map((q) => (
-                <Card key={q.label} style={[styles.quick, { backgroundColor: (colors as any)[q.key] }]} onPress={() => router.push(q.href as any)} testID={`quick-${q.label}`}>
-                  <Icon name={q.icon} size={24} color={colors.onAccent} />
-                  <Text style={styles.quickLabel}>{q.label}</Text>
-                </Card>
-              ))}
-            </View>
-
-            {/* Shortcuts */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shortcutRow}>
-              {SHORTCUTS.map((s) => (
-                <Card key={s.label} style={styles.shortcut} onPress={() => router.push(s.href as any)} testID={`shortcut-${s.label}`}>
-                  <Icon name={s.icon} size={18} color={colors.onSurface} />
-                  <Text style={styles.shortcutLabel}>{s.label}</Text>
-                </Card>
-              ))}
-            </ScrollView>
-
-            {/* Upcoming renewals */}
-            <Section title="Upcoming renewals" onSeeAll={() => router.push("/(tabs)/subscriptions")}>
-              {data?.renewals_30d?.length ? (
-                data.renewals_30d.slice(0, 4).map((r: any, i: number) => (
-                  <Pressable key={r.id} testID={`renew-${r.id}`} onPress={() => router.push(`/subscription/${r.id}`)} style={[styles.bubble, { backgroundColor: accentFor(colors, r.provider || i) }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.bubbleTitle} numberOfLines={1}>{r.provider}</Text>
-                      <Text style={styles.bubbleSub}>Renews {relativeDate(r.date)}</Text>
-                    </View>
-                    <Text style={styles.bubbleAmount}>{money(r.price, r.currency || cur)}</Text>
-                    <Icon name="chevron-right" size={22} color={colors.onAccent} />
-                  </Pressable>
-                ))
-              ) : (
-                <EmptyRow text="No renewals in the next 30 days." />
-              )}
-            </Section>
-
-            {/* Recent links */}
-            <Section title="Recent saved links" onSeeAll={() => router.push("/link-vault")}>
-              {links.data?.length ? (
-                links.data.slice(0, 3).map((l: any, i: number) => (
-                  <Card key={l.id} style={styles.linkRow} onPress={() => router.push(`/link/${l.id}`)}>
-                    <View style={[styles.linkIcon, { backgroundColor: accentFor(colors, l.title || i) }]}>
-                      <Icon name="link-variant" size={20} color={colors.onAccent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.linkTitle} numberOfLines={1}>{l.title}</Text>
-                      <Text style={styles.linkSub} numberOfLines={1}>{l.source} · {l.category}</Text>
-                    </View>
-                  </Card>
-                ))
-              ) : (
-                <EmptyRow text="Share a link to SubMind to start your vault." />
-              )}
-            </Section>
-          </>
-        )}
-      </ScrollView>
-    </View>
-  );
+ const st=useStyles(), {colors:c}=useTheme(), ins=useSafeAreaInsets(), r=useRouter();
+ const subs=useSubscriptions(), accounts=useAccounts(), plans=useWatchlist(), insights=useInsights();
+ const rows=subs.data||[];
+ const due=[...rows].filter((s:any)=>["Active","Trial"].includes(s.status) && (daysUntil(s.renewal_date||s.trial_end) ?? -1) >= 0).sort((a:any,b:any)=>String(a.renewal_date||a.trial_end).localeCompare(String(b.renewal_date||b.trial_end))).slice(0,4);
+ const totals=new Map<string,number>();
+ rows.filter((s:any)=>['Active','Trial'].includes(s.status)&&s.price!=null&&['monthly','yearly','weekly'].includes(s.billing_cycle)).forEach((s:any)=>totals.set(s.currency||'AED',(totals.get(s.currency||'AED')||0)+Number(s.price)/(s.billing_cycle==='yearly'?12:s.billing_cycle==='weekly'?1/4.33:1)));
+ const tiles=[['SUBSCRIPTIONS',rows.length,'Paid, prepaid & trials','credit-card-outline',c.pastelYellow,'/(tabs)/subscriptions'],['ACCOUNTS',(accounts.data||[]).length,'Tools & student benefits','badge-account-outline',c.pastelMint,'/(tabs)/accounts'],['BRAIN MAP','↗','Put your tools to work','graph-outline',c.pastelLavender,'/brain'],['SAVED PLANS',(plans.data||[]).length,'Ideas for later','bookmark-outline',c.pastelPink,'/watchlist']];
+ return <View style={{flex:1}}><ScrollView contentContainerStyle={[st.page,{paddingTop:ins.top+18,paddingBottom:TAB_BAR_SPACE+ins.bottom}]} refreshControl={<RefreshControl refreshing={insights.isRefetching} onRefresh={()=>{insights.refetch();subs.refetch();accounts.refetch();plans.refetch();}}/>}>
+ <View style={st.top}><BrandMark compact/><Pressable accessibilityLabel="Open settings" onPress={()=>r.push('/settings')} style={st.iconBtn}><Icon name="cog-outline"/></Pressable></View>
+ <View style={st.kicker}><View style={{width:7,height:7,backgroundColor:c.brandSecondary}}/><Text style={st.eyebrow}>YOUR DIGITAL TOOLKIT</Text><Text style={st.issue}>01 / OVERVIEW</Text></View>
+ <Text style={st.headline}>Less clutter.{"\n"}More control<Text style={{color:c.brandSecondary}}>.</Text></Text><Text style={st.intro}>Every plan. Every perk. All in one place.</Text>
+ <View style={st.spend}><View style={st.top}><Text style={st.spendLabel}>MONTHLY COMMITMENT</Text><Icon name="arrow-top-right" size={27} color="#171714"/></View><View style={{gap:5,paddingVertical:12}}>{[...totals.entries()].map(([currency,amount])=><Text key={currency} style={st.amount}>{money(amount,currency)}<Text style={{fontFamily:'Body',fontSize:14}}> /mo</Text></Text>)}{!totals.size?<Text style={st.amount}>{subs.isLoading?'Loading…':'—'}</Text>:null}</View><Text style={st.spendNote}>Known recurring prices · currencies kept separate</Text><View style={st.spendFoot}><Text style={st.footText}>{rows.filter((s:any)=>s.status==='Trial').length} TRIALS</Text><Text style={st.footText}>{insights.data?.renewals_30d?.length||0} RENEWALS / 30 DAYS</Text></View></View>
+ <View style={st.grid}>{tiles.map(([label,value,note,icon,color,href])=><Pressable key={String(label)} onPress={()=>r.push(href as any)} style={[st.tile,{backgroundColor:String(color)}]}><View style={st.top}><Icon name={icon} color="#171714"/><Icon name="arrow-top-right" color="#171714" size={20}/></View><Text style={st.tileValue}>{value}</Text><Text style={st.tileTitle}>{label}</Text><Text style={st.tileNote}>{note}</Text></Pressable>)}</View>
+ <View style={{gap:12,marginTop:6}}><SectionTitle title="COMING UP NEXT" right={<Pressable onPress={()=>r.push('/(tabs)/reminders')}><Text style={st.link}>Calendar ↗</Text></Pressable>}/>{due.map((s:any)=>{const date=s.renewal_date||s.trial_end;const days=daysUntil(date);return <Pressable key={s.id} onPress={()=>r.push(('/subscription/'+s.id) as any)} style={st.renewal}><CategoryDot category={s.category} provider={s.provider} size={42}/><View style={{flex:1}}><Text style={st.recordTitle}>{s.provider}</Text><Text style={st.recordNote}>{s.plan||s.status} · {formatDate(date)}</Text></View><Badge label={days!=null&&days<0?'Review':days+'d'} tone={days!=null&&days<4?'warning':'muted'}/><Icon name="chevron-right" size={18}/></Pressable>;})}</View>
+ <Pressable onPress={()=>r.push('/find-tool')} style={st.finder}><View style={st.findIcon}><Icon name="lightning-bolt-outline" color="#171714" size={26}/></View><View style={{flex:1}}><Text style={st.findTitle}>Have a task in mind?</Text><Text style={st.recordNote}>Find the right tool you already own.</Text></View><Icon name="arrow-top-right"/></Pressable>
+ <View style={st.top}><Pressable onPress={()=>r.push('/prompts')}><Text style={st.link}>Prompt vault ↗</Text></Pressable><Pressable onPress={()=>r.push('/toolkit' as any)}><Text style={st.link}>Toolkit notes ↗</Text></Pressable></View>
+ </ScrollView></View>;
 }
-
-// Lightweight helpers for the home sections.
-function EmptyRow({ text }: { text: string }) {
-  const styles = useStyles();
-  return <Card><Text style={styles.muted}>{text}</Text></Card>;
-}
-
-function Section({ title, children, onSeeAll }: any) {
-  const styles = useStyles();
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {onSeeAll ? <Text style={styles.seeAll} onPress={onSeeAll}>See all</Text> : null}
-      </View>
-      <View style={{ gap: 10 }}>{children}</View>
-    </View>
-  );
-}
-
-const useStyles = makeStyles((colors) => ({
-  container: { flex: 1, backgroundColor: colors.surface },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 22 },
-  hi: { color: colors.muted, fontSize: 15, fontWeight: "700" },
-  dateBox: { flexDirection: "row", alignItems: "center", gap: 6 },
-  dateDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accentOrange },
-  dateText: { color: colors.onSurfaceTertiary, fontSize: 13, fontWeight: "700" },
-  brand: { color: colors.onSurface, fontSize: 40, fontWeight: "800", letterSpacing: -1.2, paddingHorizontal: 22, marginTop: 2 },
-  hero: { backgroundColor: colors.surfaceInverse, marginHorizontal: 18, marginTop: 16, borderRadius: 26, padding: 24, borderWidth: 2, borderColor: colors.border, shadowColor: "#000", shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 4, height: 6 }, elevation: 6 },
-  heroLead: { color: "#FFFFFF99", fontSize: 14, fontWeight: "700", marginBottom: 10 },
-  heroBig: { color: colors.onSurfaceInverse, fontSize: 25, fontWeight: "800", lineHeight: 34, letterSpacing: -0.5 },
-  hl: { fontSize: 25, fontWeight: "800", lineHeight: 34, letterSpacing: -0.5 },
-  heroChips: { flexDirection: "row", gap: 10, marginTop: 20 },
-  heroChip: { backgroundColor: "#FFFFFF14", borderRadius: 16, paddingHorizontal: 16, paddingVertical: 10, flex: 1 },
-  heroChipLabel: { color: "#FFFFFF99", fontSize: 12, fontWeight: "700" },
-  heroChipValue: { color: "#FFFFFF", fontSize: 18, fontWeight: "800", marginTop: 2 },
-  quickRow: { flexDirection: "row", gap: 10, paddingHorizontal: 18, marginTop: 18 },
-  quick: { flex: 1, alignItems: "center", gap: 8, paddingVertical: 16, paddingHorizontal: 4, borderRadius: 20, borderWidth: 2, borderColor: colors.border, shadowColor: "#000", shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 3, height: 4 }, elevation: 4 },
-  quickLabel: { color: colors.onAccent, fontSize: 12, fontWeight: "800" },
-  shortcutRow: { gap: 10, paddingHorizontal: 18, marginTop: 16 },
-  shortcut: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 999, borderWidth: 2, borderColor: colors.border },
-  shortcutLabel: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: "800" },
-  section: { marginTop: 26, paddingHorizontal: 18 },
-  sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  sectionTitle: { color: colors.onSurface, fontSize: 20, fontWeight: "800", letterSpacing: -0.4 },
-  seeAll: { color: colors.brandPrimary, fontSize: 14, fontWeight: "800" },
-  bubble: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 18, paddingHorizontal: 18, paddingVertical: 16, borderWidth: 2, borderColor: colors.border, shadowColor: "#000", shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 3, height: 4 }, elevation: 4 },
-  bubbleTitle: { color: colors.onAccent, fontSize: 16, fontWeight: "800" },
-  bubbleSub: { color: colors.onAccent, opacity: 0.75, fontSize: 13, marginTop: 2, fontWeight: "600" },
-  bubbleAmount: { color: colors.onAccent, fontSize: 16, fontWeight: "800" },
-  bubblePress: { ...{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 } },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  linkIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  linkTitle: { color: colors.onSurfaceSecondary, fontSize: 15, fontWeight: "700" },
-  linkSub: { color: colors.muted, fontSize: 13, marginTop: 2 },
-  muted: { color: colors.muted, fontSize: 14 },
-}));
+const useStyles=makeStyles(c=>({page:{paddingHorizontal:22,gap:20,width:'100%',maxWidth:760,alignSelf:'center'},top:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},iconBtn:{width:44,height:44,borderWidth:1.5,borderColor:c.border,borderRadius:8,alignItems:'center',justifyContent:'center',backgroundColor:c.surfaceSecondary,shadowColor:'#171714',shadowOpacity:1,shadowRadius:0,shadowOffset:{width:3,height:3}},kicker:{flexDirection:'row',alignItems:'center',gap:7,marginTop:12},eyebrow:{fontSize:10,fontWeight:'800',letterSpacing:1.5,color:c.onSurface},issue:{fontSize:10,color:c.muted,marginLeft:'auto'},headline:{fontFamily:'Display',fontSize:48,lineHeight:53,letterSpacing:-0.8,color:c.onSurface},intro:{fontSize:14,color:c.onSurfaceTertiary,marginTop:-8},spend:{backgroundColor:c.pastelYellow,borderWidth:2,borderColor:'#171714',padding:20,borderRadius:10,shadowColor:'#171714',shadowOpacity:1,shadowRadius:0,shadowOffset:{width:5,height:5}},spendLabel:{fontSize:10,fontWeight:'800',letterSpacing:1.5,color:'#171714'},amount:{fontFamily:'Display',fontSize:36,color:'#171714'},spendNote:{fontSize:11,color:'#47432B'},spendFoot:{flexDirection:'row',justifyContent:'space-between',borderTopWidth:1,borderTopColor:'#171714',marginTop:17,paddingTop:12},footText:{fontSize:9,fontWeight:'800',letterSpacing:0.5,color:'#171714'},grid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:16},tile:{width:'47.5%',padding:16,borderWidth:1.5,borderColor:'#171714',borderRadius:9,shadowColor:'#171714',shadowOpacity:1,shadowRadius:0,shadowOffset:{width:4,height:4}},tileValue:{fontFamily:'Display',fontSize:38,lineHeight:45,marginTop:14,color:'#171714'},tileTitle:{fontSize:11,fontWeight:'900',letterSpacing:0.5,color:'#171714',marginTop:4},tileNote:{fontSize:10,color:'#474A43',marginTop:5},link:{fontSize:12,fontWeight:'800',color:c.onSurface,textDecorationLine:'underline'},renewal:{flexDirection:'row',alignItems:'center',gap:11,backgroundColor:c.surfaceSecondary,padding:13,borderWidth:1.5,borderColor:c.border,borderRadius:9},recordTitle:{fontSize:14,fontWeight:'800',color:c.onSurface},recordNote:{fontSize:11,lineHeight:17,color:c.onSurfaceTertiary,marginTop:3},finder:{flexDirection:'row',alignItems:'center',gap:13,padding:16,borderWidth:1.5,borderColor:c.border,borderRadius:10,backgroundColor:c.surfaceSecondary},findIcon:{backgroundColor:c.pastelMint,width:45,height:45,borderWidth:1.5,borderColor:'#171714',borderRadius:8,alignItems:'center',justifyContent:'center'},findTitle:{fontSize:16,fontWeight:'800',color:c.onSurface}}));

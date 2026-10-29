@@ -1,17 +1,18 @@
+import * as Clipboard from "expo-clipboard";
 import { type ReactNode, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Alert, Share, Text, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
 import { FormScroll, TextField } from "@/src/components/form";
 import { AppHeader, Card, Icon, Loading, PrimaryButton } from "@/src/components/ui";
+import { api } from "@/src/lib/api";
+import { exportAndShare } from "@/src/lib/share-export";
 import {
-  isHttpsBackend,
   loadClientConfig,
   saveClientConfig,
   secretsPersistOnThisPlatform,
-  testBackendConnection,
   type ClientConfig,
 } from "@/src/lib/client-config";
 import { queryClient } from "@/src/query-client";
@@ -19,9 +20,8 @@ import { makeStyles, useTheme } from "@/src/theme";
 
 const EMPTY_CONFIG: ClientConfig = {
   displayName: "",
-  backendUrl: "",
-  backendToken: "",
   geminiApiKey: "",
+  nvidiaApiKey: "",
   openAiApiKey: "",
 };
 
@@ -34,7 +34,7 @@ export default function Profile() {
   const router = useRouter();
   const [draft, setDraft] = useState<ClientConfig>(EMPTY_CONFIG);
   const [loading, setLoading] = useState(true);
-  const [action, setAction] = useState<"save" | "test" | "clear" | null>(null);
+  const [action, setAction] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function Profile() {
       const saved = await saveClientConfig(draft);
       setDraft(saved);
       queryClient.clear();
-      setNotice({ tone: "success", text: "Profile saved. App data will now use this backend." });
+      setNotice({ tone: "success", text: "Profile saved. Subscriptions stay on this phone." });
     } catch (error) {
       setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not save profile." });
     } finally {
@@ -62,28 +62,15 @@ export default function Profile() {
     }
   };
 
-  const test = async () => {
-    setAction("test");
-    setNotice({ tone: "info", text: "Testing your backend…" });
-    try {
-      const text = await testBackendConnection(draft);
-      setNotice({ tone: "success", text });
-    } catch (error) {
-      setNotice({ tone: "error", text: error instanceof Error ? error.message : "Connection failed." });
-    } finally {
-      setAction(null);
-    }
-  };
-
   const clearKeys = async () => {
-    const cleared = { ...draft, backendToken: "", geminiApiKey: "", openAiApiKey: "" };
+    const cleared = { ...draft, geminiApiKey: "", nvidiaApiKey: "", openAiApiKey: "" };
     setAction("clear");
     setNotice(null);
     try {
       const saved = await saveClientConfig(cleared);
       setDraft(saved);
       queryClient.clear();
-      setNotice({ tone: "success", text: "Saved tokens and provider keys were removed." });
+      setNotice({ tone: "success", text: "Saved provider keys were removed." });
     } catch (error) {
       setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not clear keys." });
     } finally {
@@ -91,15 +78,87 @@ export default function Profile() {
     }
   };
 
+  const exportExcel = async (scope: "plans" | "accounts" | "all") => {
+    setAction(`excel-${scope}`);
+    setNotice(null);
+    try {
+      const name = await exportAndShare(scope);
+      setNotice({ tone: "success", text: `Excel file ready: ${name}` });
+    } catch (error) {
+      setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not export Excel file." });
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const exportBackup = async () => {
+    setAction("export");
+    setNotice(null);
+    try {
+      const backup = await api.exportBackup();
+      const result = await Share.share({ message: backup, title: "SubMind backup" });
+      if (result.action === Share.dismissedAction) {
+        setNotice({ tone: "info", text: "Export cancelled. Your data is still on this phone." });
+        return;
+      }
+      setNotice({ tone: "success", text: "Backup shared. Keep that file; restore it later from Profile." });
+    } catch (error) {
+      setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not export data." });
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const restoreBackup = async () => {
+    setAction("restore");
+    setNotice(null);
+    try {
+      const text = (await Clipboard.getStringAsync()).trim();
+      if (!text) throw new Error("Copy a SubMind backup JSON first, then tap Restore backup.");
+      await api.replaceBackup(text);
+      queryClient.clear();
+      setNotice({ tone: "success", text: "Backup restored onto this phone." });
+    } catch (error) {
+      setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not restore backup." });
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const wipeData = () => {
+    Alert.alert(
+      "Clear all phone data?",
+      "This removes subscriptions, links, reminders, inbox items, and chat history stored on this device. API keys in Profile are not removed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setAction("wipe");
+            setNotice(null);
+            try {
+              await api.clearAll();
+              queryClient.clear();
+              setNotice({ tone: "success", text: "All local SubMind data was removed from this phone." });
+            } catch (error) {
+              setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not clear data." });
+            } finally {
+              setAction(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   if (loading) {
     return <View style={styles.container}><AppHeader title="Profile" back /><Loading /></View>;
   }
 
-  const insecureConnection = !!draft.backendUrl && !isHttpsBackend(draft.backendUrl);
-
   return (
     <View style={styles.container}>
-      <AppHeader title="Profile" subtitle="Your app, backend, and provider keys" back />
+      <AppHeader title="Profile" subtitle="Saved on this phone" back />
       <FormScroll>
         <Section title="You">
           <TextField
@@ -112,46 +171,42 @@ export default function Profile() {
           />
         </Section>
 
-        <Section title="Connection">
-          <TextField
-            label="SubMind backend URL"
-            value={draft.backendUrl}
-            onChangeText={set("backendUrl")}
-            placeholder="https://api.example.com"
-            keyboardType="url"
-            autoCapitalize="none"
-            autoCorrect={false}
-            testID="profile-backend-url"
-          />
-          <Text style={styles.help}>Enter the server origin only. A trailing /api is accepted and removed automatically.</Text>
-          <TextField
-            label="App access token (optional locally)"
-            value={draft.backendToken}
-            onChangeText={set("backendToken")}
-            placeholder="Matches SUBMIND_API_TOKEN"
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            testID="profile-backend-token"
-          />
-          {insecureConnection ? (
-            <View style={[styles.notice, { backgroundColor: colors.warning + "20" }]}>
-              <Icon name="alert-outline" size={18} color={colors.warning} />
-              <Text style={[styles.noticeText, { color: colors.warning }]}>HTTP exposes tokens on the network. Use it only for trusted LAN development; use HTTPS for a real build.</Text>
-            </View>
-          ) : null}
+        <Section title="Phone storage">
+          <View style={styles.securityRow}>
+            <Icon name="cellphone-key" size={20} color={colors.brandSecondary} />
+            <Text style={styles.help}>
+              Subscriptions, links, reminders, and inbox items are stored only on this device. Uninstalling the app deletes them unless you export a backup first.
+            </Text>
+          </View>
+          <PrimaryButton title="Export Plans to Excel" variant="secondary" icon="microsoft-excel" onPress={() => exportExcel("plans")} loading={action === "excel-plans"} disabled={!!action && action !== "excel-plans"} />
+          <PrimaryButton title="Export Accounts to Excel" variant="secondary" icon="microsoft-excel" onPress={() => exportExcel("accounts")} loading={action === "excel-accounts"} disabled={!!action && action !== "excel-accounts"} />
+          <PrimaryButton title="Export everything to Excel" variant="secondary" icon="file-excel-outline" onPress={() => exportExcel("all")} loading={action === "excel-all"} disabled={!!action && action !== "excel-all"} />
+          <PrimaryButton title="Export JSON backup" variant="secondary" icon="export" onPress={exportBackup} loading={action === "export"} disabled={!!action && action !== "export"} />
+          <PrimaryButton title="Restore backup" variant="secondary" icon="import" onPress={restoreBackup} loading={action === "restore"} disabled={!!action && action !== "restore"} />
+          <Text style={styles.help}>Restore copies the SubMind JSON currently on the clipboard onto this phone.</Text>
+          <PrimaryButton title="Clear all data" variant="secondary" icon="delete-outline" onPress={wipeData} loading={action === "wipe"} disabled={!!action && action !== "wipe"} />
         </Section>
 
-        <Section title="Bring your own AI keys">
+        <Section title="Optional AI keys">
           <TextField
             label="Gemini API key"
             value={draft.geminiApiKey}
             onChangeText={set("geminiApiKey")}
-            placeholder="Used for extraction, chat, and comparisons"
+            placeholder="Gemini key for extraction, chat, and comparisons"
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
             testID="profile-gemini-key"
+          />
+          <TextField
+            label="NVIDIA API key (fallback)"
+            value={draft.nvidiaApiKey}
+            onChangeText={set("nvidiaApiKey")}
+            placeholder="Used if Gemini is unavailable"
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            testID="profile-nvidia-key"
           />
           <TextField
             label="OpenAI API key"
@@ -167,8 +222,8 @@ export default function Profile() {
             <Icon name={secretsPersistOnThisPlatform ? "shield-lock-outline" : "web"} size={20} color={colors.brandSecondary} />
             <Text style={styles.help}>
               {secretsPersistOnThisPlatform
-                ? "On this phone, secrets are stored in the device keychain and sent only to the backend URL above. The backend uses them per request and does not save them."
-                : "Browsers do not provide app-grade secure storage. Keys remain only for this page session; use the native phone app for saved keys."}
+                ? "Keys stay in this phone's secure storage. They are sent only to Google or OpenAI when you use AI features, never to a SubMind server."
+                : "Browsers do not provide app-grade secure storage. Keys remain only for this page session; use the phone app for saved keys."}
             </Text>
           </View>
           <PrimaryButton title="Remove saved keys" variant="secondary" icon="key-remove" onPress={clearKeys} loading={action === "clear"} disabled={!!action && action !== "clear"} />
@@ -195,8 +250,7 @@ export default function Profile() {
 
       <KeyboardStickyView>
         <View style={[styles.bar, { paddingBottom: insets.bottom + 12 }]}>
-          <PrimaryButton title="Test" variant="secondary" icon="lan-connect" onPress={test} loading={action === "test"} disabled={!draft.backendUrl || (!!action && action !== "test")} style={{ flex: 1 }} />
-          <PrimaryButton title="Save profile" icon="content-save-outline" onPress={save} loading={action === "save"} disabled={!draft.backendUrl || (!!action && action !== "save")} style={{ flex: 2 }} testID="profile-save" />
+          <PrimaryButton title="Save profile" icon="content-save-outline" onPress={save} loading={action === "save"} disabled={!!action && action !== "save"} testID="profile-save" />
         </View>
       </KeyboardStickyView>
     </View>
@@ -215,15 +269,22 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 const useStyles = makeStyles((colors) => ({
   container: { flex: 1, backgroundColor: colors.surface },
-  section: { gap: 10 },
-  sectionTitle: { color: colors.muted, fontSize: 13, fontWeight: "800", textTransform: "uppercase", marginLeft: 4 },
-  sectionCard: { gap: 14 },
-  help: { color: colors.muted, fontSize: 12, lineHeight: 18, flex: 1 },
-  securityRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
-  notice: { borderRadius: 14, padding: 12, flexDirection: "row", gap: 9, alignItems: "flex-start" },
-  noticeText: { fontSize: 12, lineHeight: 18, flex: 1, fontWeight: "600" },
-  linkCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 0, borderWidth: 0 },
-  linkIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.brandPrimary + "16", alignItems: "center", justifyContent: "center" },
-  linkTitle: { color: colors.onSurfaceSecondary, fontSize: 15, fontWeight: "800" },
-  bar: { flexDirection: "row", gap: 10, paddingHorizontal: 20, paddingTop: 12, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
+  section: { gap: 8 },
+  sectionTitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    marginLeft: 4,
+    letterSpacing: 0.5,
+  },
+  sectionCard: { gap: 14, padding: 18, borderRadius: 22 },
+  help: { color: colors.muted, fontSize: 12, lineHeight: 18, flex: 1, fontWeight: "500" },
+  securityRow: { flexDirection: "row", gap: 10, alignItems: "flex-start", backgroundColor: colors.surfaceSecondary, padding: 12, borderRadius: 14 },
+  notice: { borderRadius: 10, padding: 14, flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  noticeText: { fontSize: 13, lineHeight: 18, flex: 1, fontWeight: "600" },
+  linkCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 0, borderWidth: 0, backgroundColor: "transparent" },
+  linkIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.pastelBlue, alignItems: "center", justifyContent: "center" },
+  linkTitle: { color: colors.onSurface, fontSize: 15, fontWeight: "800" },
+  bar: { paddingHorizontal: 20, paddingTop: 12, backgroundColor: colors.glassStrong, borderTopWidth: 1, borderTopColor: colors.border },
 }));
